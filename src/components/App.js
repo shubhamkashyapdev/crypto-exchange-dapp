@@ -4,6 +4,8 @@ import "./App.css"
 import Web3 from "web3"
 import DaiToken from "../abis/DaiToken.json"
 import DappToken from "../abis/DappToken.json"
+import TokenFarm from "../abis/TokenFarm.json"
+import Main from "./Main"
 
 class App extends Component {
   constructor(props) {
@@ -28,7 +30,7 @@ class App extends Component {
   async loadBlockchainData() {
     const web3 = window.web3
     const accounts = await web3.eth.getAccounts()
-    this.setState({ ...this.state, account: accounts[0] })
+    this.setState({ account: accounts[0] })
 
     const networkID = await web3.eth.net.getId()
     // load daiTokens
@@ -54,6 +56,7 @@ class App extends Component {
         DappToken.abi,
         dappTokenData.address
       )
+      this.setState({ dappToken })
       const dappTokenBalance = await dappToken.methods
         .balanceOf(this.state.account)
         .call()
@@ -64,6 +67,28 @@ class App extends Component {
     } else {
       window.alert("DappToken contract not deployed to detected network")
     }
+
+    // load tokenFarm
+    const tokenFarmData = TokenFarm.networks[networkID]
+    if (tokenFarmData) {
+      const tokenFarm = new web3.eth.Contract(
+        TokenFarm.abi,
+        tokenFarmData.address
+      )
+      this.setState({ tokenFarm })
+      const stakingBalance = await tokenFarm.methods
+        .stakingBalance(this.state.account)
+        .call()
+      this.setState({ stakingBalance: stakingBalance.toString() })
+      console.log({
+        stakingBalance: web3.utils.fromWei(stakingBalance, "Ether"),
+      })
+    } else {
+      window.alert("TokenFarm contract is not deployed to detected network")
+    }
+
+    // set loading to false
+    this.setState({ loading: false })
   }
 
   async loadWeb3() {
@@ -77,7 +102,50 @@ class App extends Component {
     }
   }
 
+  stakeTokens = (amount) => {
+    this.setState({ loading: true })
+    this.state.daiToken.methods
+      .approve(this.state.tokenFarm._address, amount)
+      .send({ from: this.state.account })
+      .on("transactionHash", () => {
+        this.state.tokenFarm.methods
+          .stakeTokens(amount)
+          .send({ from: this.state.account })
+          .on("transactionHash", (hash) => {
+            this.setState({ loading: false })
+          })
+      })
+  }
+
+  unstakeTokens = () => {
+    this.setState({ loading: true })
+    this.state.tokenFarm.methods
+      .unstakeTokens()
+      .send({ from: this.state.account })
+      .on("transactionHash", (hash) => {
+        this.setState({ loading: false })
+      })
+  }
+
   render() {
+    let content
+    if (this.state.loading) {
+      content = (
+        <p id="loader" className="text-center">
+          Loading...
+        </p>
+      )
+    } else {
+      content = (
+        <Main
+          daiTokenBalance={this.state.daiTokenBalance}
+          dappTokenBalance={this.state.dappTokenBalance}
+          stakingBalance={this.state.stakingBalance}
+          stakeTokens={this.stakeTokens}
+          unstakeTokens={this.unstakeTokens}
+        />
+      )
+    }
     return (
       <div>
         <Navbar account={this.state.account} />
@@ -95,7 +163,7 @@ class App extends Component {
                   rel="noopener noreferrer"
                 ></a>
 
-                <h1>Hello, World!</h1>
+                {content}
               </div>
             </main>
           </div>
